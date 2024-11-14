@@ -58,7 +58,7 @@ contract SessionManager {
         Session storage session = sessions[sessionId];
         if (session.sessionId == bytes32(0)) revert SessionNotFound(sessionId);
 
-        if (!isSessionOwner(session.did, msg.sender)) revert NotAuthorized();
+        if (!isSessionOwner(session.did)) revert NotAuthorized();
 
         session.active = false;
         activeSessions[session.did] = bytes32(0);
@@ -83,7 +83,7 @@ contract SessionManager {
         return keccak256(abi.encodePacked(did, block.timestamp, msg.sender));
     }
 
-    function isSessionOwner(string memory did, address caller) internal view returns (bool) {
+    function isSessionOwner(string memory did) internal view returns (bool) {
         return msg.sender == identityRegistry.getDidAddress(did);
     }
 }
