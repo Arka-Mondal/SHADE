@@ -6,9 +6,7 @@ import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
 const AuthModule = buildModule("AuthModule", (m) => {
   const IdentityRegistry = m.contract("IdentityRegistry");
 
-  const sessionManager = m.contract("SessionManager");
-
-  return { IdentityRegistry, sessionManager };
+  return { IdentityRegistry };
 });
 
 export default AuthModule;
