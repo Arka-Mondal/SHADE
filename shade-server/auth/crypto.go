@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"shade-server/types"
 
 	"golang.org/x/crypto/hkdf"
 )
@@ -23,13 +24,13 @@ import (
  *
  * @return: Public-Private Key Pair
  */
-func GenerateECCKeyPair() (*KeyPairECDSA, error) {
+func GenerateECCKeyPair() (*types.KeyPairECDSA, error) {
 	privateKeyECDSA, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, err
 	}
 
-	return &KeyPairECDSA{
+	return &types.KeyPairECDSA{
 		PrivateKeyECDSA: privateKeyECDSA,
 		PublicKeyECDSA:  &privateKeyECDSA.PublicKey,
 	}, nil
@@ -42,7 +43,7 @@ func GenerateECCKeyPair() (*KeyPairECDSA, error) {
  *
  * @return: ECDH Parameters
  */
-func ECDHComputeSharedSecret(privateKey *ecdsa.PrivateKey, otherPublicKey *ecdsa.PublicKey) (*ECDHSharedSecret, error) {
+func ECDHComputeSharedSecret(privateKey *ecdsa.PrivateKey, otherPublicKey *ecdsa.PublicKey) (*types.ECDHSharedSecret, error) {
 	privateKeyECDH, err := privateKey.ECDH()
 	if err != nil {
 		return nil, err
@@ -57,7 +58,7 @@ func ECDHComputeSharedSecret(privateKey *ecdsa.PrivateKey, otherPublicKey *ecdsa
 		return nil, err
 	}
 
-	return &ECDHSharedSecret{
+	return &types.ECDHSharedSecret{
 		SharedSecret: sharedSecret,
 	}, nil
 }
@@ -70,7 +71,7 @@ func ECDHComputeSharedSecret(privateKey *ecdsa.PrivateKey, otherPublicKey *ecdsa
  *
  * @return: key, salt
  */
-func DeriveKey(id_ecdh *ECDHSharedSecret, eph_ecdh *ECDHSharedSecret, salt []byte) ([]byte, []byte, error) {
+func DeriveKey(id_ecdh *types.ECDHSharedSecret, eph_ecdh *types.ECDHSharedSecret, salt []byte) ([]byte, []byte, error) {
 	if id_ecdh.SharedSecret == nil || eph_ecdh.SharedSecret == nil {
 		return nil, nil, fmt.Errorf("shared secret not computed")
 	}
@@ -110,7 +111,7 @@ func DeriveKey(id_ecdh *ECDHSharedSecret, eph_ecdh *ECDHSharedSecret, salt []byt
  * @return: encrypted text with used nonce
  */
 func Encrypt(key []byte, plaintext []byte) ([]byte, error) {
-  block, err := aes.NewCipher(key) // selects AES-256 as key is 32-bits
+	block, err := aes.NewCipher(key) // selects AES-256 as key is 32-bits
 	if err != nil {
 		return nil, err
 	}
