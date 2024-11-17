@@ -5,6 +5,7 @@ import generateKeyPair from "@/utils/utils";
 import { publicClient, getWalletClient } from "@/app/config/viemConfig";
 import { useState, useEffect } from 'react';
 import Notification from '../components/Notification';
+import PrivateKeyModal from '../components/PrivateKeyModal';
 
 export default function Home() {
   const { login, ready, user, logout } = usePrivy();
@@ -20,6 +21,8 @@ export default function Home() {
     active: boolean;
   } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [showPrivateKeyModal, setShowPrivateKeyModal] = useState(false);
+  const [generatedKeyPair, setGeneratedKeyPair] = useState<{ privateKey: string; publicKey: string } | null>(null);
 
   useEffect(() => {
     if (user?.wallet?.address) {
@@ -28,23 +31,28 @@ export default function Home() {
   }, [user?.wallet?.address]);
 
   const fetchDIDDocument = async () => {
+    if (!user?.wallet?.address) return;
+    
     setIsLoading(true);
     try {
-      const did = `did:shade:${user?.wallet?.address}`;
       const contractAddress = IdentityRegistry.address.startsWith('0x') 
         ? IdentityRegistry.address as `0x${string}`
         : `0x${IdentityRegistry.address}` as `0x${string}`;
 
+      console.log('Contract Address:', contractAddress);
+      console.log('User Address:', user.wallet.address);
+
       const result = await publicClient.readContract({
         address: contractAddress,
         abi: IdentityRegistry.abi,
-        functionName: 'getDIDDocument',
-        args: [did]
+        functionName: 'getIdentity',
+        args: [user.wallet.address]
       }) as { did: string; publicKey: string; timestamp: bigint; active: boolean };
 
+      console.log('Fetched DID Document:', result);
       setDidDocument(result);
     } catch (error) {
-      console.log('No DID document found');
+      console.error('Error fetching DID document:', error);
       setDidDocument(null);
     } finally {
       setIsLoading(false);
@@ -56,10 +64,38 @@ export default function Home() {
     setIsRegistering(true);
     
     try {
-      const keyPair = await generateKeyPair();
-      localStorage.setItem('privateKey', keyPair.privateKey);
-      localStorage.setItem('publicKey', keyPair.publicKey);
+      let keyPair;
+      
+      if (didDocument) {
+        const privateKey = prompt("Please enter your private key for this DID:");
+        if (!privateKey) {
+          setNotification({
+            message: 'Private key is required to proceed',
+            type: 'error'
+          });
+          return;
+        }
+        
+        keyPair = { privateKey, publicKey: didDocument.publicKey };
+        await proceedWithRegistration(keyPair);
+      } else {
+        keyPair = await generateKeyPair();
+        setGeneratedKeyPair(keyPair);
+        setShowPrivateKeyModal(true);
+      }
+    } catch (error) {
+      console.error('DID registration error:', error);
+      setNotification({
+        message: `Failed to register DID: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        type: 'error'
+      });
+    } finally {
+      setIsRegistering(false);
+    }
+  };
 
+  const proceedWithRegistration = async (keyPair: { privateKey: string; publicKey: string }) => {
+    try {
       if (!user?.wallet?.address) {
         setNotification({
           message: 'Please connect your wallet first to register DID',
@@ -67,6 +103,9 @@ export default function Home() {
         });
         return;
       }
+
+      localStorage.setItem('privateKey', keyPair.privateKey);
+      localStorage.setItem('publicKey', keyPair.publicKey);
 
       const timestamp = Date.now();
       const uniqueIdentifier = await crypto.subtle.digest(
@@ -99,49 +138,63 @@ export default function Home() {
       
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
 
-      console.log(receipt);
-      
-      setNotification({
-        message: 'DID registered successfully!',
-        type: 'success'
-      });
+      if (receipt.status === 'success') {
+        setNotification({
+          message: 'DID registered successfully!',
+          type: 'success'
+        });
 
-      await fetchDIDDocument();
-
+        setTimeout(async () => {
+          await fetchDIDDocument();
+        }, 2000);
+      } else {
+        throw new Error('Transaction failed');
+      }
     } catch (error) {
       console.error('DID registration error:', error);
       setNotification({
         message: `Failed to register DID: ${error instanceof Error ? error.message : 'Unknown error'}`,
         type: 'error'
       });
-    } finally {
-      setIsRegistering(false);
     }
-  }
+  };
 
-  // Create a function to handle logout and state cleanup
-  const handleLogout = async () => {
-    try {
-      await logout();
-      // Clear all relevant states
-      setDidDocument(null);
-      setIsRegistering(false);
-      setIsLoading(false);
-      setNotification(null);
-      // Optionally clear localStorage if you're storing anything there
-      localStorage.removeItem('privateKey');
-      localStorage.removeItem('publicKey');
-    } catch (error) {
-      console.error('Logout error:', error);
-      setNotification({
-        message: 'Error during logout',
-        type: 'error'
-      });
+  const handlePrivateKeyConfirm = async () => {
+    if (generatedKeyPair) {
+      setShowPrivateKeyModal(false);
+      await proceedWithRegistration(generatedKeyPair);
+      setGeneratedKeyPair(null);
     }
+  };
+
+  const handleLogout = () => {
+    setDidDocument(null);
+    setNotification(null);
+    setIsRegistering(false);
+    setIsLoading(false);
+    setShowPrivateKeyModal(false);
+    setGeneratedKeyPair(null);
+    
+    localStorage.removeItem('privateKey');
+    localStorage.removeItem('publicKey');
+    
+    logout();
   };
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 text-white">
+      {generatedKeyPair && (
+        <PrivateKeyModal
+          isOpen={showPrivateKeyModal}
+          privateKey={generatedKeyPair.privateKey}
+          onClose={() => {
+            setShowPrivateKeyModal(false);
+            setGeneratedKeyPair(null);
+          }}
+          onConfirm={handlePrivateKeyConfirm}
+        />
+      )}
+
       {user && (
         <div className="absolute top-4 right-4">
           <button
