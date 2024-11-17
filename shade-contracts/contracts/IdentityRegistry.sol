@@ -1,10 +1,10 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
 contract IdentityRegistry {
     struct DIDDocument {
         string did;
-        bytes publicKey;
+        string publicKey;
         uint256 timestamp;
         bool active;
     }
@@ -23,9 +23,9 @@ contract IdentityRegistry {
     error NotAuthorized();
     error DIDNotFound(string did);
 
-    function registerDID(string calldata did, bytes calldata publicKey) external {
+    function registerDID(string calldata did, string calldata publicKey) external {
         if (bytes(did).length == 0) revert DIDCannotBeEmpty();
-        if (publicKey.length == 0) revert PublicKeyCannotBeEmpty();
+        if (bytes(publicKey).length == 0) revert PublicKeyCannotBeEmpty();
         if (identities[msg.sender].timestamp != 0) revert DIDAlreadyRegistered(msg.sender);
         if (didToAddress[did] != address(0)) revert DIDAlreadyExists(did);
 
@@ -59,6 +59,10 @@ contract IdentityRegistry {
     function isValidDID(string calldata did) external view returns (bool) {
         address owner = didToAddress[did];
         return owner != address(0) && identities[owner].active;
+    }
+
+    function getIdentity(address owner) external view returns (DIDDocument memory) {
+        return identities[owner];
     }
 
     function getDidAddress(string calldata did) external view returns (address) {
