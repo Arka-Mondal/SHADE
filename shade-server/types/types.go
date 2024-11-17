@@ -63,6 +63,10 @@ type Database interface {
 	UpdateAuthSessionStatus(ctx context.Context, id uuid.UUID, status string) error
 	DeleteExpiredAuthSessions(ctx context.Context) error
 
+	// Server Keys operations
+	GetServerKeys(ctx context.Context) (*ServerKeys, error)
+	SaveServerKeys(ctx context.Context, keys *ServerKeys) error
+
 	Close() error
 }
 
@@ -88,4 +92,10 @@ type VerifyRequest struct {
 type VerifyResponse struct {
 	SessionKey []byte `json:"session_key"`
 	ExpiresAt  int64  `json:"expires_at"`
+}
+
+type ServerKeys struct {
+    DID        string
+    PrivateKey []byte
+    PublicKey  []byte
 }

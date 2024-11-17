@@ -2,8 +2,6 @@ package server
 
 import (
 	"crypto/rand"
-	"crypto/x509"
-	"encoding/pem"
 	"net/http"
 	"shade-server/auth"
 	"time"
@@ -35,40 +33,24 @@ func (s *Server) handleChallenge(c *gin.Context) {
 		return
 	}
 
-	// Convert keys to PKCS8
-	privateKeyBytes, err := x509.MarshalPKCS8PrivateKey(keyPair.PrivateKeyECDSA)
+	encodedPrivateKey, err := auth.EncodePrivateKeyToBytes(keyPair.PrivateKeyECDSA)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal private key"})
-		return
-	}
-
-	publicKeyBytes, err := x509.MarshalPKIXPublicKey(keyPair.PublicKeyECDSA)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal public key"})
-		return
-	}
-
-	// Create PEM block
-	privateKeyPEM := &pem.Block{
-		Type:  "PRIVATE KEY",
-		Bytes: privateKeyBytes,
-	}
-
-	publicKeyPEM := &pem.Block{
-		Type:  "PUBLIC KEY",
-		Bytes: publicKeyBytes,
-	}
-
-	encodedPrivateKey := pem.EncodeToMemory(privateKeyPEM)
-	if encodedPrivateKey == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encode private key"})
 		return
 	}
 
-	encodedPublicKey := pem.EncodeToMemory(publicKeyPEM)
-	if encodedPublicKey == nil {
+	encodedPublicKey, err := auth.EncodePublicKeyToBytes(keyPair.PublicKeyECDSA)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encode public key"})
 		return
+	}
+
+	if len(encodedPrivateKey) > 0 && encodedPrivateKey[len(encodedPrivateKey)-1] == '\n' {
+		encodedPrivateKey = encodedPrivateKey[:len(encodedPrivateKey)-1]
+	}
+
+	if len(encodedPublicKey) > 0 && encodedPublicKey[len(encodedPublicKey)-1] == '\n' {
+		encodedPublicKey = encodedPublicKey[:len(encodedPublicKey)-1]
 	}
 
 	// Create challenge session

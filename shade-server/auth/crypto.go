@@ -10,12 +10,14 @@ import (
 	"crypto/cipher"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/x509"
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
 	"io"
 	"math/big"
 	"shade-server/types"
+	"encoding/pem"
 
 	"golang.org/x/crypto/hkdf"
 )
@@ -204,4 +206,70 @@ func VerifySignature(publicKey *ecdsa.PublicKey, challenge []byte, signature []b
 	hash := sha256.Sum256(challenge)
 
 	return ecdsa.Verify(publicKey, hash[:], r, s), nil
+}
+
+func EncodePrivateKeyToBytes(privateKey *ecdsa.PrivateKey) ([]byte, error) {
+	privateKeyBytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	if err != nil {
+		return nil, err
+	}
+
+	privateKeyPEM := &pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: privateKeyBytes,
+	}
+
+	return pem.EncodeToMemory(privateKeyPEM), nil
+}
+
+func DecodePrivateKeyFromBytes(privateKeyBytes []byte) (*ecdsa.PrivateKey, error) {
+	block, _ := pem.Decode(privateKeyBytes)
+	if block == nil {
+		return nil, fmt.Errorf("failed to decode PEM block")
+	}
+
+	privateKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	ecdsaKey, ok := privateKey.(*ecdsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("not an ECDSA private key")
+	}
+
+	return ecdsaKey, nil
+}
+
+func EncodePublicKeyToBytes(publicKey *ecdsa.PublicKey) ([]byte, error) {
+	publicKeyBytes, err := x509.MarshalPKIXPublicKey(publicKey)
+	if err != nil {
+		return nil, err
+	}
+
+	publicKeyPEM := &pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: publicKeyBytes,
+	}
+
+	return pem.EncodeToMemory(publicKeyPEM), nil
+}
+
+func DecodePublicKeyFromBytes(publicKeyBytes []byte) (*ecdsa.PublicKey, error) {
+	block, _ := pem.Decode(publicKeyBytes)
+	if block == nil {
+		return nil, fmt.Errorf("failed to decode PEM block")
+	}
+
+	publicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	ecdsaKey, ok := publicKey.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("not an ECDSA public key")
+	}
+
+	return ecdsaKey, nil
 }
