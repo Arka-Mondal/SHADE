@@ -5,11 +5,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"shade-server/types"
+	"shade-server/blockchain"
 )
 
 type Server struct {
-	db     types.Database
-	router *gin.Engine
+	db       types.Database
+	router   *gin.Engine
+	contract *blockchain.IdentityRegistry
 }
 
 type Config struct {

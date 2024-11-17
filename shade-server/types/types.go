@@ -72,12 +72,13 @@ type Database interface {
 
 // Request/Response types
 type ChallengeRequest struct {
-	DID string `json:"did" binding:"required"`
+	EphemeralPublicKey string `json:"ephemeralPublicKey"`
+	DID               string `json:"did"`
+	Hash              string `json:"hash"`
 }
 
 type ChallengeResponse struct {
 	SessionID          string `json:"session_id"`
-	Challenge          []byte `json:"challenge"`
 	EncryptedChallenge []byte `json:"encrypted_challenge"`
 	EphemeralPublicKey []byte `json:"ephemeral_public_key"`
 	Salt               []byte `json:"salt"`

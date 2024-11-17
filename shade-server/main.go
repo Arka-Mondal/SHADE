@@ -57,7 +57,7 @@ func main() {
 	log.Printf("Server identity initialized successfully")
 
 	log.Printf("Starting HTTP server on port 8080...")
-	server := server.NewServer(db)
+	server := server.NewServer(db, registry)
 	server.Start(":8080")
 }
 
