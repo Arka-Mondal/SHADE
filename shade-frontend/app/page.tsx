@@ -263,14 +263,18 @@ export default function Home() {
 
     console.log('Challenge Result:', challenge);
 
-    const signature = await sign(privateKeyFromUser!, challenge.toString());
+    console.log('Original Challenge:', challenge);
+    console.log('Challenge being signed:', Buffer.from(challenge).toString('base64'));
+
+    const challengeArray = new Uint8Array(challenge);
+    const signature = await sign(privateKeyFromUser!, challengeArray);
 
     console.log("Signature", signature);
     console.log("Signature Length: ", signature.length);
 
-    console.log("Verify: ", await verify(didDocument?.publicKey!, challenge.toString(), signature));
+    console.log("Verify: ", await verify(didDocument?.publicKey!, challengeArray, signature));
 
-    console.log("Challenge2: ", challenge);
+    console.log("Challenge2: ", Buffer.from(challenge).toString());
 
     console.log("my public key: ", didDocument?.publicKey)
 
@@ -287,6 +291,11 @@ export default function Home() {
     const verifiedData = await response.json();
     console.log(verifiedData.status);
 
+    console.log('Challenge type:', Object.prototype.toString.call(challenge));
+    console.log('Challenge buffer type:', Object.prototype.toString.call(challenge.buffer));
+    console.log('Challenge length:', challenge.length);
+    console.log('Signature type:', Object.prototype.toString.call(signature));
+    console.log('Signature length:', signature.length);
   }
 
   return (

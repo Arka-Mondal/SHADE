@@ -205,6 +205,8 @@ func VerifySignature(publicKey *ecdsa.PublicKey, challenge []byte, signature []b
 
 	hash := sha256.Sum256(challenge)
 
+	fmt.Printf("Verify Hash: %v\n", hash)
+
 	return ecdsa.Verify(publicKey, hash[:], r, s), nil
 }
 

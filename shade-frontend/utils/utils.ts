@@ -236,56 +236,50 @@ export const jsonBitArrDecode = (salt: string)=> {
   return bytes;
 }
 
-export async function sign(privateKeyPem: string, data: string): Promise<Uint8Array> {
+export async function sign(privateKeyPem: string, data: Uint8Array | Buffer): Promise<Uint8Array> {
   // Import the private key
   const privateKey = await importPrivateKey(privateKeyPem);
 
-  // Encode the data to ArrayBuffer using TextEncoder
-  const encoder = new TextEncoder();
-  const encodedData = encoder.encode(data);
+  // Convert data to Uint8Array if it's a Buffer
+  const dataArray = data instanceof Buffer ? new Uint8Array(data) : data;
 
-  // console.log('Encoded Data:', encodedData);
+  // Create a hash of the data
+  const hashBuffer = await window.crypto.subtle.digest('SHA-256', dataArray);
 
-  // Hash the data with SHA-256
-  const hashBuffer = await window.crypto.subtle.digest("SHA-256", encodedData);
-
-  // Sign the hashed data with the private key
+  // Sign the hash
   const signature = await window.crypto.subtle.sign(
-      {
-          name: "ECDSA", // ECDSA with the P-256 curve
-          hash: { name: "SHA-256" }, // SHA-256 hash
-      },
-      privateKey, // The private key to sign the data
-      hashBuffer // The data to sign (hashed data)
+    {
+      name: 'ECDSA',
+      hash: { name: 'SHA-256' },
+    },
+    privateKey,
+    dataArray // Sign the original data, not the hash
   );
 
-  // Return the signature as a Uint8Array
   return new Uint8Array(signature);
 }
 
-export async function verify(publicKeyPem: string, data: string, signature: Uint8Array): Promise<boolean> {
-  // Import the public key
-  const publicKey = await importPublicKey(publicKeyPem);
+export async function verify(publicKeyPem: string, data: Uint8Array | Buffer, signature: Uint8Array): Promise<boolean> {
+  try {
+    const publicKey = await importPublicKey(publicKeyPem);
+    
+    // Convert data to Uint8Array if it's a Buffer
+    const dataArray = data instanceof Buffer ? new Uint8Array(data) : data;
 
-  // Encode the data to ArrayBuffer using TextEncoder
-  const encoder = new TextEncoder();
-  const encodedData = encoder.encode(data);
-
-  // Hash the data with SHA-256
-  const hashBuffer = await window.crypto.subtle.digest("SHA-256", encodedData);
-
-  // Verify the signature with the public key
-  const isValid = await window.crypto.subtle.verify(
+    // Verify the signature
+    return await window.crypto.subtle.verify(
       {
-          name: "ECDSA", // ECDSA with the P-256 curve
-          hash: { name: "SHA-256" }, // SHA-256 hash
+        name: 'ECDSA',
+        hash: { name: 'SHA-256' },
       },
-      publicKey, // The public key to verify the signature
-      signature, // The signature to verify
-      hashBuffer // The data to verify (hashed data)
-  );
-
-  return isValid; // Return true if signature is valid, otherwise false
+      publicKey,
+      signature,
+      dataArray // Verify against the original data, not a hash
+    );
+  } catch (error) {
+    console.error('Verification error:', error);
+    return false;
+  }
 }
 
 // Helper function to import the private key in PEM format to a CryptoKey
