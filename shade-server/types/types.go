@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"context"
+
 	"github.com/google/uuid"
 )
 
@@ -79,6 +80,7 @@ type ChallengeRequest struct {
 
 type ChallengeResponse struct {
 	SessionID          string `json:"session_id"`
+	Did				   string `json:"did"`
 	EncryptedChallenge []byte `json:"encrypted_challenge"`
 	EphemeralPublicKey []byte `json:"ephemeral_public_key"`
 	Salt               []byte `json:"salt"`
@@ -86,11 +88,14 @@ type ChallengeResponse struct {
 }
 
 type VerifyRequest struct {
-	SessionID string `json:"session_id" binding:"required"`
-	Signature []byte `json:"signature" binding:"required"`
+	SessionID string `json:"session_id"`
+	Did       string `json:"did"`	
+	Signature string `json:"signature"`
+	Challenge string `json:"challenge"`
 }
 
 type VerifyResponse struct {
+	Status     string `json:"status"`
 	SessionKey []byte `json:"session_key"`
 	ExpiresAt  int64  `json:"expires_at"`
 }

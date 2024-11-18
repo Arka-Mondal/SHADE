@@ -2,7 +2,8 @@ package server
 
 import (
 	"crypto/rand"
-	_"encoding/hex"
+	"encoding/base64"
+	_ "encoding/hex"
 	"fmt"
 	"net/http"
 	"shade-server/auth"
@@ -13,21 +14,37 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"bytes"
 )
 
-func (s *Server) CreateChallenge(c *gin.Context, req types.ChallengeRequest) (*types.ChallengeSession, error) {
+func JsonEnc(pemKey []byte) string {
+	encoded := base64.StdEncoding.EncodeToString(pemKey)
+	return encoded
+  }
+  
+func JsonDec(encKey string) []byte {
+	decoded, err := base64.StdEncoding.DecodeString(encKey)
+	if err != nil {
+		fmt.Printf("Error decoding: %v\n", err)
+		return nil
+	}
+  
+	return decoded
+  }
+
+func (s *Server) CreateChallenge(c *gin.Context, req types.ChallengeRequest) (*types.ChallengeSession, *types.ServerKeys, error) {
 	// First, verify the DID exists and is active by fetching the DID Document
 	log.Printf("Fetching DID Document for DID: %s", req.DID)
 	didDoc, err := s.contract.GetDIDDocument(req.DID)
 	if err != nil {
 		log.Printf("Error fetching DID Document: %v", err)
-		return nil, fmt.Errorf("failed to verify DID: %v", err)
+		return nil, nil,fmt.Errorf("failed to verify DID: %v", err)
 	}
 
 	// Verify DID is active
 	if !didDoc.Active {
 		log.Printf("DID %s is not active", didDoc.DID)
-		return nil, fmt.Errorf("DID is not active")
+		return nil, nil, fmt.Errorf("DID is not active")
 	}
 
 	log.Printf("DID Document found and verified. Public Key: %s", didDoc.PublicKey)
@@ -36,7 +53,7 @@ func (s *Server) CreateChallenge(c *gin.Context, req types.ChallengeRequest) (*t
 	keyPair, err := auth.GenerateECCKeyPair()
 	if err != nil {
 		log.Printf("Failed to generate keys: %v", err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Generate random challenge
@@ -44,20 +61,22 @@ func (s *Server) CreateChallenge(c *gin.Context, req types.ChallengeRequest) (*t
 	_, err = rand.Read(challenge)
 	if err != nil {
 		log.Printf("Failed to generate challenge: %v", err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	encodedPrivateKey, err := auth.EncodePrivateKeyToBytes(keyPair.PrivateKeyECDSA)
 	if err != nil {
 		log.Printf("Failed to encode private key: %v", err)
-		return nil, err
+		return nil, nil,err
 	}
 
 	encodedPublicKey, err := auth.EncodePublicKeyToBytes(keyPair.PublicKeyECDSA)
 	if err != nil {
 		log.Printf("Failed to encode public key: %v", err)
-		return nil, err
+		return nil, nil, err
 	}
+
+	fmt.Printf("%v\n", encodedPublicKey)
 
 	if len(encodedPrivateKey) > 0 && encodedPrivateKey[len(encodedPrivateKey)-1] == '\n' {
 		encodedPrivateKey = encodedPrivateKey[:len(encodedPrivateKey)-1]
@@ -78,11 +97,12 @@ func (s *Server) CreateChallenge(c *gin.Context, req types.ChallengeRequest) (*t
 	decodedEphemeralClientPublicKey, err := auth.DecodePublicKeyFromBytes([]byte(req.EphemeralPublicKey))
 	if err != nil {
 		log.Printf("Failed to decode ephemeral public key: %v", err)
-		return nil, err
+		return nil, nil,err
 	}
 
-	// fmt.Printf("Decoded ephemeral public key: %s\n", decodedEphemeralClientPublicKey)
+	// fmt.Printf("hello hello hello enc %s\n", req.EphemeralPublicKey)
 
+	// fmt.Printf("Decoded ephemeral public key: %s\n", decodedEphemeralClientPublicKey)
 
 	// client's identity public key
 	// identityClientPublicKey, err := hex.DecodeString(didDoc.PublicKey)
@@ -94,45 +114,59 @@ func (s *Server) CreateChallenge(c *gin.Context, req types.ChallengeRequest) (*t
 	decodedIdentityClientPublicKey, err := auth.DecodePublicKeyFromBytes([]byte(didDoc.PublicKey))
 	if err != nil {
 		log.Printf("Failed to decode identity public key: %v", err)
-		return nil, err
+		return nil,nil, err
 	}
+
+	// fmt.Printf("Client ID Pub key: %\n", didDoc.PublicKey)
 
 	// Fetch server's private key
 	serverKey, err := s.db.GetServerKeys(c.Request.Context())
 	if err != nil {
 		log.Printf("Failed to fetch server private key: %v", err)
-		return nil, err
+		return nil, nil,err
 	}
+
+	fmt.Printf("My own id pub key: %s\n", serverKey.PublicKey)
 
 	decodedIndentityServerPrivateKey, err := auth.DecodePrivateKeyFromBytes(serverKey.PrivateKey)
 	if err != nil {
 		log.Printf("Failed to decode server private key: %v", err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	sharedSecret_eph, err := auth.ECDHComputeSharedSecret(keyPair.PrivateKeyECDSA, decodedEphemeralClientPublicKey)
 	if err != nil {
 		log.Printf("Failed to compute shared secret: %v", err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	sharedSecret_id, err := auth.ECDHComputeSharedSecret(decodedIndentityServerPrivateKey, decodedIdentityClientPublicKey)
 	if err != nil {
 		log.Printf("Failed to compute shared secret: %v", err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	key, salt, err := auth.DeriveKey(sharedSecret_id, sharedSecret_eph, nil)
 	if err != nil {
 		log.Printf("Failed to derive key: %v", err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	encryptedChallenge, err := auth.Encrypt(key, challenge)
 	if err != nil {
 		log.Printf("Failed to encrypt challenge: %v", err)
-		return nil, err
+		return nil, nil, err
 	}
+
+
+	fmt.Printf("enc Key Id %v\n", sharedSecret_id.SharedSecret)
+	fmt.Printf("enc Key EPh %v\n", sharedSecret_eph.SharedSecret)
+	fmt.Printf("enc Key salt: %v\n", salt)
+	fmt.Printf("enc Key key: %v\n", key)
+	fmt.Printf("enc Key encChallenge: %v\n", encryptedChallenge)
+	// challengeDec, _ := hex.DecodeString(string(challenge))
+	fmt.Printf("enc Key Challenge: %v\n", challenge)
+
 
 	// Create challenge session with verified DID
 	session := &types.ChallengeSession{
@@ -151,7 +185,7 @@ func (s *Server) CreateChallenge(c *gin.Context, req types.ChallengeRequest) (*t
 	}
 
 	log.Printf("Created challenge session for DID %s with ID %s", didDoc.DID, session.ID)
-	return session, nil
+	return session, serverKey, nil
 }
 
 func (s *Server) handleChallenge(c *gin.Context) {
@@ -161,7 +195,7 @@ func (s *Server) handleChallenge(c *gin.Context) {
 		return
 	}
 
-	session, err := s.CreateChallenge(c, req)
+	session, serverKey,err := s.CreateChallenge(c, req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -172,15 +206,100 @@ func (s *Server) handleChallenge(c *gin.Context) {
 		return
 	}
 
+	
+	// fmt.Printf("enc %s\n", session.EphemeralPublicKey)
+	// fmt.Printf("enc %v\n", session.Salt)
+	// fmt.Printf("enc %v\n", session.EncryptedChallenge)
+	// encodedEphemeralPublicKey := []byte(JsonEnc(session.EphemeralPublicKey))
+
+	fmt.Printf("session salt: %v\n", session.Salt)
+	fmt.Printf("session salt: %v\n", JsonEnc(session.Salt))
+
 	c.JSON(http.StatusOK, types.ChallengeResponse{
 		SessionID:          session.ID.String(),
 		EncryptedChallenge: session.EncryptedChallenge,
 		EphemeralPublicKey: session.EphemeralPublicKey,
+		Did:                serverKey.DID,
 		Salt:               session.Salt,
 		ExpiresAt:          session.ExpiresAt.Unix(),
 	})
+
+	// json.RawMessage(`"` + session.EphemeralPublicKey + `"`)
+	// fmt.Printf("hello hello hello enc %s\n", session.EphemeralPublicKey)
+
 }
 
 func (s *Server) handleVerify(c *gin.Context) {
-	return
+	var req types.VerifyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	// Retrieve the session from the database
+	session, err := s.db.GetChallengeSession(c.Request.Context(), uuid.MustParse(req.SessionID))
+	if err != nil {
+		fmt.Printf("Failed to retrieve session: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve session"})
+		return
+	}
+	if session == nil {
+		fmt.Printf("Session not found\n")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Session not found"})
+		return
+	}
+
+	// Check if the challenge the database record
+	if !bytes.Equal(session.Challenge, JsonDec(req.Challenge)) {
+		fmt.Printf("Invalid challenge\n")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid challenge"})
+		return
+	}
+
+	if !bytes.Equal([]byte(session.DID), []byte(req.Did)) {
+		fmt.Printf("Invalid DID: %v\n%v\n", req.Did, session.DID)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid DID"})
+		return
+	}
+
+	// Fetch the DID Document from the blockchain
+	didDoc, err := s.contract.GetDIDDocument(session.DID)
+	if err != nil {
+		fmt.Printf("Failed to fetch DID Document: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch DID Document"})
+		return
+	}
+
+	// Decode the identity client's public key from the DID Document
+	decodedIdentityClientPublicKey, err := auth.DecodePublicKeyFromBytes([]byte(didDoc.PublicKey))
+	if err != nil {
+		fmt.Printf("Failed to decode identity public key: %v\n", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to decode identity public key"})
+		return
+	}
+
+	fmt.Printf("client id pub key: %v\n", didDoc.PublicKey)
+
+	decodedSignature := JsonDec(req.Signature)
+	decodedChallenge := JsonDec(req.Challenge)
+	fmt.Printf("decoded Signature: %v\n", decodedSignature)
+	fmt.Printf("decoded Challenge: %v\n", decodedChallenge)
+
+	status, err := auth.VerifySignature(decodedIdentityClientPublicKey, decodedChallenge, decodedSignature)
+	if err != nil {
+		fmt.Printf("Failed to verify signature: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify signature"})
+		return
+	}
+
+	sendStatus := "failure"
+	if status {
+		sendStatus = "success"
+	}
+
+	c.JSON(http.StatusOK, types.VerifyResponse{
+		Status:     sendStatus,
+		SessionKey: []byte{},
+		ExpiresAt:  time.Now().Unix(),
+	})
 }

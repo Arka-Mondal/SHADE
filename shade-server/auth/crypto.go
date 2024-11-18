@@ -92,7 +92,7 @@ func DeriveKey(id_ecdh *types.ECDHSharedSecret, eph_ecdh *types.ECDHSharedSecret
 	combinedSecret := append(id_ecdh.SharedSecret, eph_ecdh.SharedSecret...)
 
 	// derive the encryption key from the Combined shared secret
-	info := []byte("Authentication Encryption Key")
+	info := []byte("SHADE Enc-Dec Key")
 	hkdf := hkdf.New(hash, combinedSecret, salt, info)
 
 	// generate the key

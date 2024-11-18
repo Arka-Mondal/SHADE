@@ -1,7 +1,7 @@
 "use client";
 import { usePrivy } from "@privy-io/react-auth";
 import IdentityRegistry from '../IdentityRegistry/IdentityRegistry.json';
-import generateKeyPair from "@/utils/utils";
+import { generateKeyPair, deriveSharedSecret, deriveKey, decrypt, jsondec, jsonBitArrEncode, jsonBitArrDecode, sign, verify } from "@/utils/utils";
 import { publicClient, getWalletClient } from "@/app/config/viemConfig";
 import { useState, useEffect } from 'react';
 import Notification from '../components/Notification';
@@ -66,7 +66,7 @@ export default function Home() {
     try {
       let keyPair;
       
-      if (didDocument) {
+      if (didDocument?.active) {
         const privateKey = prompt("Please enter your private key for this DID:");
         if (!privateKey) {
           setNotification({
@@ -120,6 +120,8 @@ export default function Home() {
       const contractAddress = IdentityRegistry.address.startsWith('0x') 
         ? IdentityRegistry.address as `0x${string}`
         : `0x${IdentityRegistry.address}` as `0x${string}`;
+
+      console.log('Contract Address:', contractAddress);
 
       const walletClientWithAccount = getWalletClient(user.wallet.address as `0x${string}`);
       const contractParams = {
@@ -180,6 +182,112 @@ export default function Home() {
     
     logout();
   };
+
+  const handleAuthentication = async () => {
+    if (!user?.wallet?.address) {
+      setNotification({
+        message: 'Please connect your wallet first to authenticate',
+        type: 'error'
+      });
+      return;
+    }
+
+    const privateKeyFromUser = prompt("Please enter your private key for this DID:");
+
+    const ephemeralKeyPair = await generateKeyPair();
+
+    const concat = didDocument?.did + ephemeralKeyPair.publicKey;
+    const concatHashOfDIDAndEphemeralPublicKey = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(concat));
+    const hexConcatHashOfDIDAndEphemeralPublicKey = Array.from(new Uint8Array(concatHashOfDIDAndEphemeralPublicKey))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+      
+    const res = await fetch("http://localhost:8080/shade/v1/authenticate", {
+      method: "POST",
+      body: JSON.stringify({
+        ephemeralPublicKey: ephemeralKeyPair.publicKey,
+        did: didDocument?.did,
+        hash: hexConcatHashOfDIDAndEphemeralPublicKey,
+      }),
+    })
+
+    const data = await res.json();
+    console.log(data);
+
+    const contractAddress = IdentityRegistry.address.startsWith('0x') 
+        ? IdentityRegistry.address as `0x${string}`
+        : `0x${IdentityRegistry.address}` as `0x${string}`;
+
+    const result = await publicClient.readContract({
+      address: contractAddress,
+      abi: IdentityRegistry.abi,
+      functionName: 'getDIDDocument',
+      args: [data.did]
+    }) as { did: string; publicKey: string; timestamp: bigint; active: boolean };
+
+    console.log('Fetched Server"s DID Document:', result);
+
+    const serverIdentityPubliceKey = Buffer.from(result.publicKey);
+
+    const serverEphemeralPublicKey = Buffer.from(data.ephemeral_public_key);
+
+    console.log("server public key", serverIdentityPubliceKey.toString())
+
+
+    let sharedSecretIdentity;
+    if (privateKeyFromUser) {
+      console.log(privateKeyFromUser)
+        sharedSecretIdentity = await deriveSharedSecret(privateKeyFromUser, serverIdentityPubliceKey.toString());
+        // sharedSecretIdentity = await deriveSharedSecret(Buffer.from(privateKeyFromUser), serverIdentityPubliceKey);
+    } else {
+        alert("null")
+    }
+    
+
+    const serverEphemeralPublicKey_PEM = jsondec(serverEphemeralPublicKey.toString())
+
+    const sharedSecretEphemeralKey = await deriveSharedSecret(ephemeralKeyPair.privateKey, serverEphemeralPublicKey_PEM);
+    // const sharedSecretEphemeralKey = await deriveSharedSecret(Buffer.from(ephemeralKeyPair.privateKey), serverEphemeralPublicKey);
+
+    console.log('Shared Secret Identity:', sharedSecretIdentity);
+    console.log('Shared Secret Eph:', sharedSecretEphemeralKey);
+    console.log('Data Salt:', data.salt)
+    console.log('Data Salt:', Buffer.from(jsonBitArrDecode(data.salt)));
+    console.log('Encrypted Challenge:', Buffer.from(jsonBitArrDecode(data.encrypted_challenge)));
+
+    const derivedKeyResponse = await deriveKey(Buffer.from(sharedSecretIdentity!), Buffer.from(sharedSecretEphemeralKey), Buffer.from(jsonBitArrDecode(data.salt)));
+
+    console.log('Derived Key Response:', derivedKeyResponse);
+
+    const challenge = await decrypt(derivedKeyResponse.key, Buffer.from(jsonBitArrDecode(data.encrypted_challenge)));
+
+    console.log('Challenge Result:', challenge);
+
+    const signature = await sign(privateKeyFromUser!, challenge.toString());
+
+    console.log("Signature", signature);
+    console.log("Signature Length: ", signature.length);
+
+    console.log("Verify: ", await verify(didDocument?.publicKey!, challenge.toString(), signature));
+
+    console.log("Challenge2: ", challenge);
+
+    console.log("my public key: ", didDocument?.publicKey)
+
+    const response = await fetch('http://localhost:8080/shade/v1/verify', {
+      method: "POST",
+      body: JSON.stringify({
+        session_id: data.session_id,
+        did: didDocument?.did,
+        signature: jsonBitArrEncode(signature),
+        challenge: jsonBitArrEncode(challenge),
+      })
+    })
+
+    const verifiedData = await response.json();
+    console.log(verifiedData.status);
+
+  }
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 text-white">
@@ -321,6 +429,7 @@ export default function Home() {
               className="w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white font-semibold py-3 px-8 rounded-lg 
               hover:from-purple-700 hover:to-blue-700 transition-all duration-200 transform hover:scale-105
               disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+              onClick={handleAuthentication}
             >
               Authenticate
             </button>
